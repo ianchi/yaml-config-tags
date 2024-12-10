@@ -1,0 +1,23 @@
+{
+  "files.exclude": {
+    "**/__pycache__": true
+  },
+  "python.analysis.autoImportCompletions": true,
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+
+  "yaml.customTags": [
+    "!env scalar",
+    "!env sequence",
+    "!jinja scalar",
+    "!jinja:str scalar",
+    "!jinja:obj scalar",
+    "!include scalar",
+    "!include:txt scalar",
+    "!include:yaml scalar",
+    "!include:json scalar"
+  ],
+  "python.testing.pytestArgs": ["libs"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
+}

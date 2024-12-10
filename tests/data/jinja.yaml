@@ -1,0 +1,5 @@
+hello: !jinja |
+  {{'world'}}
+
+context: !jinja:str |
+  {{context}}

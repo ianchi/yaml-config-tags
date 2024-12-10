@@ -1,0 +1,3 @@
+plain: !include obj.yaml
+
+yaml: !include:yaml obj.yaml

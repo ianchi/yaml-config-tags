@@ -1,0 +1,5 @@
+context: !jinja:obj |
+  {{context}}
+
+list: !jinja:obj |
+  {{['element1', 'element2']}}

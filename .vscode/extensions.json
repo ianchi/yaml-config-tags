@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "redhat.vscode-yaml",
+    "ms-python.python",
+    "ms-python.black-formatter",
+    "charliermarsh.ruff",
+    "streetsidesoftware.code-spell-checker",
+    "streetsidesoftware.code-spell-checker-spanish",
+    "tamasfe.even-better-toml",
+    "timonwong.shellcheck",
+    "mikestead.dotenv",
+    "editorconfig.editorconfig"
+  ]
+}
