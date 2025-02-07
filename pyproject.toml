@@ -1,15 +1,19 @@
-[tool.poetry]
+[project]
 name = "yaml-config-tags"
-version = "0.1.0"
+version = "0.2.0"
 description = "Custom tags to extend YAML for managing advanced configurations easily within a file. Environment variables, includes, and jinja templating."
-authors = ["Adrian Panella <ianchi74@outlook.com>"]
+authors = [{ name = "Adrian Panella", email = "ianchi74@outlook.com" }]
 readme = "README.md"
 license = "MIT"
 
+keywords = ["yaml", "config"]
+
+requires-python = ">=3.11"
+
+[tool.poetry]
 homepage = "https://github.com/ianchi/yaml-config-tags"
 repository = "https://github.com/ianchi/yaml-config-tags.git"
 documentation = "https://github.com/ianchi/yaml-config-tags"
-keywords = ["yaml", "config"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -31,7 +35,7 @@ coverage = "^7.6.9"
 pytest-cov = "^6.0.0"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 
