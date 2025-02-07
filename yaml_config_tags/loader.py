@@ -17,8 +17,10 @@ class ConfigLoader(yaml.SafeLoader):
         self,
         stream: str | bytes | TextIO | BinaryIO,
         base_path: str | Path,
+        *,
         context: dict[str, Any] | None = None,
         jinja_settings: dict[str, Any] | None = None,
+        parse_only: bool = False,
     ) -> None:
 
         super().__init__(stream)
@@ -28,6 +30,8 @@ class ConfigLoader(yaml.SafeLoader):
         self.jinja_settings = jinja_settings or {}
         self.text_env = Environment(autoescape=True, **(self.jinja_settings))
         self.native_env = NativeEnvironment(**(self.jinja_settings))
+        self.env_vars: set[str] = set()
+        self.parse_only = parse_only
 
     def construct_str_jinja(self, node: yaml.nodes.Node) -> str:
         """Parse `!jinja` and `!jinja:str` tag, rendering Jinja template as text."""
@@ -38,8 +42,9 @@ class ConfigLoader(yaml.SafeLoader):
                 f"expected a scalar node, but found {node.tag}",
                 node.start_mark,
             )
-        template = self.text_env.from_string(self.construct_scalar(node))
-        return template.render(**self.jinja_context)
+        txt = self.construct_scalar(node)
+        template = self.text_env.from_string(txt)
+        return txt if self.parse_only else template.render(**self.jinja_context)
 
     def construct_obj_jinja(self, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
         """Parse `!jinja:obj` tag, rendering Jinja template to native Python objects."""
@@ -50,8 +55,9 @@ class ConfigLoader(yaml.SafeLoader):
                 f"expected a scalar node, but found {node.tag}",
                 node.start_mark,
             )
-        template = self.native_env.from_string(self.construct_scalar(node))
-        return template.render(**self.jinja_context)
+        txt = self.construct_scalar(node)
+        template = self.native_env.from_string(txt)
+        return txt if self.parse_only else template.render(**self.jinja_context)
 
     def construct_multi_jinja(self, suffix: str, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
         """Parse `!jinja:<suffix>` tag, rendering Jinja template based on the suffix."""
@@ -104,6 +110,10 @@ class ConfigLoader(yaml.SafeLoader):
                 f"expected a scalar or sequence node, but found {node.tag}",
                 node.start_mark,
             )
+
+        self.env_vars.update(variables)
+        if self.parse_only:
+            return f"{variables}"
 
         for var in variables:
             if var in os.environ:
@@ -168,6 +178,9 @@ class ConfigLoader(yaml.SafeLoader):
                 f"expected a string, but found {path}",
                 node.start_mark,
             )
+
+        if self.parse_only:
+            return f"{path}"
 
         # check if it is a glob pattern
         is_glob = "*" in path or "?" in path or "[" in path
@@ -245,3 +258,26 @@ def config_load(
             return loader.get_single_data()
         finally:
             loader.dispose()
+
+
+def config_get_env(
+    path: str | Path,
+    jinja_settings: dict[str, Any] | None = None,
+) -> set[str]:
+    """Load configuration YAML file, parses it and return list of referenced ENV variables."""
+    path = Path(path)
+
+    with open(path, encoding="utf-8") as stream:
+        loader = ConfigLoader(
+            stream,
+            path.parent.absolute(),
+            context=None,
+            jinja_settings=jinja_settings,
+            parse_only=True,
+        )
+        try:
+            loader.get_single_data()
+        finally:
+            loader.dispose()
+
+        return loader.env_vars
