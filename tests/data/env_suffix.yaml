@@ -1,0 +1,7 @@
+int: !env:int ENV_VAR_INT
+
+float: !env:float ENV_VAR_FLOAT
+
+str: !env:str ENV_VAR_STR
+
+timestamp: !env:timestamp ENV_VAR_TIMESTAMP

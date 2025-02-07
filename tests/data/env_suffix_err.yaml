@@ -1,0 +1,1 @@
+int: !env:int ENV_VAR_STR

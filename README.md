@@ -64,6 +64,24 @@ There are three ways to use environment variables:
 - `!env [VAR_NAME, default_value]` - Load the environment variable `VAR_NAME` with a default value if it is not set.
 - `!env [VAR_NAME, FALLBACK_VAR1, .., FALLBACK_VARn, default_value]` - Load the environment variable `VAR_NAME`, if it is not set, try to load the fallback variables in order. If none of them are set, use the default value.
 
+#### Explicit type
+
+Environment variables are converted using implicit yaml types by default, but you can force a specific data type with tag suffix:
+
+- `!env:str VAR_NAME`
+- `!env:int VAR_NAME`
+
+Valid type suffix are:
+
+- str
+- int
+- float
+- bool
+- timestamp
+
+You can also combine defaults and fallbacks with type suffix:
+`!env:str [VAR_NAME, default_value]`
+
 ### Includes
 
 You can include other files in your configuration file by using the `!include` tag.

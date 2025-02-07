@@ -190,6 +190,8 @@ convention = "google" # Accepts: "google", "numpy", or "pep257".
 keep-runtime-typing = true
 
 [tool.pyright]
+venvPath = "."
+venv = ".venv"
 exclude = ["**/node_modules", "**/__pycache__", ".venv/"]
 reportMissingImports = "error"
 pythonVersion = "3.11"

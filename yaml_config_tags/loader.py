@@ -63,13 +63,15 @@ class ConfigLoader(yaml.SafeLoader):
         raise yaml.constructor.ConstructorError(
             None,
             None,
-            f"expected 'obj' or 'str' sufix, but found {suffix}",
+            f"expected 'obj' or 'str' suffix, but found {suffix}",
             node.start_mark,
         )
 
     # adapted from
     # https://github.com/waylan/pyyaml-env-tag/blob/master/yaml_env_tag.py
-    def env_constructor(self, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
+    def env_constructor(
+        self, node: yaml.nodes.Node, suffix: str | None = None
+    ) -> Any:  # noqa: ANN401
         """Parse `!env` tag, fetching values from environment variables.
 
         Supports fallback variables and default values using list syntax:
@@ -106,8 +108,12 @@ class ConfigLoader(yaml.SafeLoader):
         for var in variables:
             if var in os.environ:
                 value = os.environ[var]
-                # Resolve value to Python type using YAML's implicit resolvers
-                tag = self.resolve(yaml.nodes.ScalarNode, value, (True, False))
+                if suffix:
+                    # Resolve value to Python type using YAML's implicit resolvers
+                    tag = f"tag:yaml.org,2002:{suffix}"
+                else:
+                    # Resolve value to Python type using YAML's implicit resolvers
+                    tag = self.resolve(yaml.nodes.ScalarNode, value, (True, False))
                 return self.construct_object(yaml.nodes.ScalarNode(tag, value))
 
         if not has_default:
@@ -118,6 +124,19 @@ class ConfigLoader(yaml.SafeLoader):
                 node.start_mark,
             )
         return default
+
+    def construct_multi_env(self, suffix: str, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
+        """Parse `!env:<suffix>` tag, converting environment variable to fixed type."""
+        valid = ["str", "int", "float", "bool", "timestamp"]
+        if suffix not in valid:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"expected {valid}, but found {suffix}",
+                node.start_mark,
+            )
+
+        return self.env_constructor(node, suffix)
 
     def include_constructor(self, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
         """Parse `!include` tag, including another YAML file."""
@@ -203,6 +222,7 @@ class ConfigLoader(yaml.SafeLoader):
 
 
 ConfigLoader.add_constructor("!env", ConfigLoader.env_constructor)
+ConfigLoader.add_multi_constructor("!env:", ConfigLoader.construct_multi_env)
 ConfigLoader.add_constructor("!jinja", ConfigLoader.construct_str_jinja)
 ConfigLoader.add_multi_constructor("!jinja:", ConfigLoader.construct_multi_jinja)
 ConfigLoader.add_constructor("!include", ConfigLoader.include_constructor)

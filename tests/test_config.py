@@ -1,5 +1,6 @@
 """This module contains tests for the yaml-config library."""
 
+import datetime
 import os
 
 import yaml
@@ -45,6 +46,37 @@ def test_env() -> None:
     assert result["simple"] == "value1"
     assert result["default"] == 10
     assert result["fallback"] == "value2"
+
+
+def test_env_suffix() -> None:
+    """Test loading a YAML file with environment variables."""
+    # set environment
+
+    os.environ["ENV_VAR_INT"] = "10"
+    os.environ["ENV_VAR_FLOAT"] = "10.1"
+    os.environ["ENV_VAR_STR"] = "2024-12-01"
+    os.environ["ENV_VAR_TIMESTAMP"] = "2024-12-01"
+
+    result = config_load("tests/data/env_suffix.yaml")
+
+    assert result["int"] == 10
+    assert isinstance(result["int"], int)
+    assert result["float"] == 10.1
+    assert isinstance(result["float"], float)
+    assert result["str"] == "2024-12-01"
+    assert isinstance(result["str"], str)
+    assert result["timestamp"] == datetime.date(2024, 12, 1)
+    assert isinstance(result["timestamp"], datetime.date)
+
+
+def test_env_suffix_err() -> None:
+    """Test loading a YAML file with environment variables."""
+    # set environment
+
+    os.environ["ENV_VAR_STR"] = "mystring"
+
+    with raises(ValueError):
+        config_load("tests/data/env_suffix_err.yaml")
 
 
 def test_env_missing() -> None:
