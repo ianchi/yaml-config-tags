@@ -1,6 +1,6 @@
 [project]
 name = "yaml-config-tags"
-version = "0.2.0"
+version = "0.3.0"
 description = "Custom tags to extend YAML for managing advanced configurations easily within a file. Environment variables, includes, and jinja templating."
 authors = [{ name = "Adrian Panella", email = "ianchi74@outlook.com" }]
 readme = "README.md"
