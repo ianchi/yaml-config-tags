@@ -1,3 +1,9 @@
+## v0.4.0 (2025-07-01)
+
+### Feat
+
+- allow to add custom filters in jinja
+
 ## v0.3.0 (2025-02-07)
 
 ### Feat
