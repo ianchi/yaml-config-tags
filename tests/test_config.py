@@ -26,6 +26,19 @@ def test_jinja_obj() -> None:
     assert result["context"] == context
 
 
+def test_jinja_filter() -> None:
+    """Test loading a YAML file with Jinja filter."""
+    context = "value1"
+    result = config_load(
+        "tests/data/jinja_filter.yaml",
+        context={"context": context},
+        jinja_filters={"custom_filter": lambda x: x.upper()},
+    )
+
+    assert result["hello"] == "WORLD"
+    assert result["context"] == context.upper()
+
+
 def test_obj_error() -> None:
     """Test loading a YAML file with malformed Jinja object."""
     with raises(yaml.constructor.ConstructorError):

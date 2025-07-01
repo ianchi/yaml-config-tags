@@ -26,6 +26,7 @@ config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable] | None = None,
 ) -> Any
 ```
 

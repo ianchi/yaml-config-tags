@@ -2,6 +2,7 @@
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, BinaryIO, TextIO
 
@@ -13,13 +14,14 @@ from jinja2.nativetypes import NativeEnvironment
 class ConfigLoader(yaml.SafeLoader):
     """Custom YAML loader to parse configuration files with support for Jinja, ENV, and Includes."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         stream: str | bytes | TextIO | BinaryIO,
         base_path: str | Path,
         *,
         context: dict[str, Any] | None = None,
         jinja_settings: dict[str, Any] | None = None,
+        jinja_filters: dict[str, Callable] | None = None,
         parse_only: bool = False,
     ) -> None:
 
@@ -30,6 +32,10 @@ class ConfigLoader(yaml.SafeLoader):
         self.jinja_settings = jinja_settings or {}
         self.text_env = Environment(autoescape=True, **(self.jinja_settings))
         self.native_env = NativeEnvironment(**(self.jinja_settings))
+        if jinja_filters:
+            for name, func in jinja_filters.items():
+                self.text_env.filters[name] = func
+                self.native_env.filters[name] = func
         self.env_vars: set[str] = set()
         self.parse_only = parse_only
 
@@ -246,13 +252,18 @@ def config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable] | None = None,
 ) -> Any:  # noqa: ANN401
     """Load configuration from YAML file, with support for Jinja, ENV and Includes."""
     path = Path(path)
 
     with open(path, encoding="utf-8") as stream:
         loader = ConfigLoader(
-            stream, path.parent.absolute(), context=context, jinja_settings=jinja_settings
+            stream,
+            path.parent.absolute(),
+            context=context,
+            jinja_settings=jinja_settings,
+            jinja_filters=jinja_filters,
         )
         try:
             return loader.get_single_data()
@@ -263,6 +274,7 @@ def config_load(
 def config_get_env(
     path: str | Path,
     jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable] | None = None,
 ) -> set[str]:
     """Load configuration YAML file, parses it and return list of referenced ENV variables."""
     path = Path(path)
@@ -273,6 +285,7 @@ def config_get_env(
             path.parent.absolute(),
             context=None,
             jinja_settings=jinja_settings,
+            jinja_filters=jinja_filters,
             parse_only=True,
         )
         try:

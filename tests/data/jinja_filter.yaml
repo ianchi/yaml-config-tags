@@ -1,0 +1,5 @@
+hello: !jinja |
+  {{'world' | custom_filter }}
+
+context: !jinja:str |
+  {{context | custom_filter}}
