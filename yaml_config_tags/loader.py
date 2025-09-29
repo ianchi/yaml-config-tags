@@ -4,11 +4,13 @@ import json
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, BinaryIO, TextIO
+from typing import Any, BinaryIO, TextIO, TypeVar, overload
 
 import yaml
 from jinja2 import Environment
 from jinja2.nativetypes import NativeEnvironment
+
+T = TypeVar("T")
 
 
 class ConfigLoader(yaml.SafeLoader):
@@ -248,13 +250,53 @@ ConfigLoader.add_constructor("!include", ConfigLoader.include_constructor)
 ConfigLoader.add_multi_constructor("!include:", ConfigLoader.multi_include_constructor)
 
 
+@overload
 def config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
     jinja_filters: dict[str, Callable] | None = None,
-) -> Any:  # noqa: ANN401
-    """Load configuration from YAML file, with support for Jinja, ENV and Includes."""
+    *,
+    constructor: type[T],
+) -> T: ...
+
+
+@overload
+def config_load(
+    path: str | Path,
+    context: dict[str, Any] | None = None,
+    jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable] | None = None,
+    *,
+    constructor: None = None,
+) -> Any: ...  # noqa: ANN401
+
+
+def config_load(
+    path: str | Path,
+    context: dict[str, Any] | None = None,
+    jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable] | None = None,
+    *,
+    constructor: type[Any] | None = None,
+) -> Any:
+    """Load configuration from YAML file, with support for Jinja, ENV and Includes.
+
+    Args:
+        path: Path to the YAML configuration file
+        context: Context variables for Jinja template rendering
+        jinja_settings: Settings for Jinja environment
+        jinja_filters: Custom Jinja filters
+        constructor: Optional class constructor to create typed instances
+
+    Returns:
+        `Any` if no constructor is provided, otherwise an instance of the constructor type.
+
+    Note:
+        The constructor can be any Python class that accepts keyword arguments,
+        including regular classes, dataclasses, NamedTuples, Pydantic models, etc.
+        The loaded YAML data must be a dictionary to be passed as keyword arguments.
+    """
     path = Path(path)
 
     with open(path, encoding="utf-8") as stream:
@@ -266,7 +308,14 @@ def config_load(
             jinja_filters=jinja_filters,
         )
         try:
-            return loader.get_single_data()
+            data = loader.get_single_data()
+
+            if constructor:
+                if not isinstance(data, dict):
+                    raise ValueError("Data is not a dictionary, cannot construct object")
+                return constructor(**data)
+
+            return data
         finally:
             loader.dispose()
 
