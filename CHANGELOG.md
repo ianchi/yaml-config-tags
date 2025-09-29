@@ -1,3 +1,9 @@
+## v0.5.0 (2025-09-29)
+
+### Feat
+
+- add object construction on load
+
 ## v0.4.0 (2025-07-01)
 
 ### Feat
