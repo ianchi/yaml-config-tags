@@ -1,0 +1,23 @@
+# Test file demonstrating scoped context with __vars__
+global_value: !jinja "{{ vars.base_url }}"
+
+# Create a scoped context within this object
+api_config:
+  __vars__:
+    base_url: "https://api.example.com"
+    version: "v2"
+
+  # These will use the scoped context
+  endpoint: !jinja "{{ vars.base_url }}/{{ vars.version }}/users"
+  auth_url: !jinja "{{ vars.base_url }}/{{ vars.version }}/auth"
+
+  # Nested object with its own scope
+  settings:
+    __vars__:
+      timeout: 30
+
+    connection_timeout: !jinja "{{ vars.timeout }}"
+    read_url: !jinja "{{ vars.base_url }}/{{ vars.version }}/read"
+
+# Back to global context (base_url from original context)
+fallback_url: !jinja "{{ vars.base_url }}"

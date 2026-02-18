@@ -25,6 +25,7 @@ class ConfigLoader(yaml.SafeLoader):
         jinja_settings: dict[str, Any] | None = None,
         jinja_filters: dict[str, Callable] | None = None,
         parse_only: bool = False,
+        jinja_vars_key: str = "__vars__",
     ) -> None:
 
         super().__init__(stream)
@@ -40,6 +41,73 @@ class ConfigLoader(yaml.SafeLoader):
                 self.native_env.filters[name] = func
         self.env_vars: set[str] = set()
         self.parse_only = parse_only
+        self.jinja_vars_key = jinja_vars_key
+
+    def construct_mapping(self, node: yaml.nodes.Node, deep: bool = False) -> dict:
+        """Override to intercept mappings with jinja_vars_key for context management."""
+        if not isinstance(node, yaml.nodes.MappingNode):
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"expected a mapping node, but found {node.tag}",
+                node.start_mark,
+            )
+
+        # Check if this mapping contains the special jinja_vars_key
+        if self.jinja_vars_key:
+            env_node = None
+            other_pairs = []
+
+            for key_node, value_node in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key == self.jinja_vars_key:
+                    env_node = value_node
+                else:
+                    other_pairs.append((key_node, value_node))
+
+            # If we found the special key, handle context management
+            if env_node is not None:
+                # Parse the environment definition using jinja
+                # Always use deep=True to fully construct the env dict
+                env_value = self.construct_object(env_node, deep=True)
+
+                # Ensure it's a dictionary
+                if not isinstance(env_value, dict):
+                    raise yaml.constructor.ConstructorError(
+                        None,
+                        None,
+                        f"{self.jinja_vars_key} must be a dict, "
+                        f"but found {type(env_value).__name__}",
+                        env_node.start_mark,
+                    )
+
+                # Ensure 'vars' exists in context
+                if "vars" not in self.jinja_context:
+                    self.jinja_context["vars"] = {}
+
+                # Save current vars dict
+                saved_vars = self.jinja_context["vars"]
+
+                # Create new vars by merging old vars with new values
+                self.jinja_context["vars"] = {**saved_vars, **env_value}
+
+                try:
+                    # Process remaining keys in new context
+                    # Build result dict manually to ensure proper context
+                    result = {}
+                    for key_node, value_node in other_pairs:
+                        key = self.construct_object(key_node, deep=deep)
+                        # Always use deep=True to ensure nested mappings are fully
+                        # constructed while the scoped vars are active
+                        value = self.construct_object(value_node, deep=True)
+                        result[key] = value
+                    return result
+                finally:
+                    # Restore original vars
+                    self.jinja_context["vars"] = saved_vars
+
+        # No special key found, use default behavior
+        return super().construct_mapping(node, deep=deep)
 
     def construct_str_jinja(self, node: yaml.nodes.Node) -> str:
         """Parse `!jinja` and `!jinja:str` tag, rendering Jinja template as text."""
@@ -258,6 +326,7 @@ def config_load(
     jinja_filters: dict[str, Callable] | None = None,
     *,
     constructor: type[T],
+    jinja_vars_key: str = "__vars__",
 ) -> T: ...
 
 
@@ -269,6 +338,7 @@ def config_load(
     jinja_filters: dict[str, Callable] | None = None,
     *,
     constructor: None = None,
+    jinja_vars_key: str = "__vars__",
 ) -> Any: ...  # noqa: ANN401
 
 
@@ -279,6 +349,7 @@ def config_load(
     jinja_filters: dict[str, Callable] | None = None,
     *,
     constructor: type[Any] | None = None,
+    jinja_vars_key: str = "__vars__",
 ) -> Any:
     """Load configuration from YAML file, with support for Jinja, ENV and Includes.
 
@@ -288,6 +359,7 @@ def config_load(
         jinja_settings: Settings for Jinja environment
         jinja_filters: Custom Jinja filters
         constructor: Optional class constructor to create typed instances
+        jinja_vars_key: Key name for context management in mappings (default: "__vars__")
 
     Returns:
         `Any` if no constructor is provided, otherwise an instance of the constructor type.
@@ -306,6 +378,7 @@ def config_load(
             context=context,
             jinja_settings=jinja_settings,
             jinja_filters=jinja_filters,
+            jinja_vars_key=jinja_vars_key,
         )
         try:
             data = loader.get_single_data()
@@ -324,6 +397,7 @@ def config_get_env(
     path: str | Path,
     jinja_settings: dict[str, Any] | None = None,
     jinja_filters: dict[str, Callable] | None = None,
+    jinja_vars_key: str = "__vars__",
 ) -> set[str]:
     """Load configuration YAML file, parses it and return list of referenced ENV variables."""
     path = Path(path)
@@ -336,6 +410,7 @@ def config_get_env(
             jinja_settings=jinja_settings,
             jinja_filters=jinja_filters,
             parse_only=True,
+            jinja_vars_key=jinja_vars_key,
         )
         try:
             loader.get_single_data()

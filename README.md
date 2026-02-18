@@ -10,6 +10,7 @@ It supports:
 - Environment variables: `!env`
 - File includes: `!include`
 - Jinja templating: `!jinja`
+- Scoped context variables: `__vars__`
 
 ## Installation
 
@@ -27,6 +28,9 @@ config_load(
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
     jinja_filters: dict[str, Callable] | None = None,
+    *,
+    constructor: type[Any] | None = None,
+    jinja_vars_key: str = "__vars__",
 ) -> Any
 ```
 
@@ -138,3 +142,77 @@ connection:
 ```
 
 When using `!jinja:obj` the template is rendered using _NativeEnvironment_ and the result is evaluated as a native object instead of a string.
+
+### Scoped Context Variables
+
+You can create scoped context variables within any mapping using the special `__vars__` key. This allows you to define variables that are available to Jinja templates within that scope and any nested scopes.
+
+Variables defined in `__vars__` are accessed via the `vars` namespace in Jinja templates: `{{ vars.variable_name }}`.
+
+#### Basic Usage
+
+```yaml
+api_config:
+  __vars__:
+    base_url: "https://api.example.com"
+    version: "v2"
+  
+  endpoint: !jinja "{{ vars.base_url }}/{{ vars.version }}/users"
+  auth_url: !jinja "{{ vars.base_url }}/{{ vars.version }}/auth"
+```
+
+#### Nested Scopes
+
+Nested mappings can define their own `__vars__` which inherit from and override parent scope variables:
+
+```yaml
+api_config:
+  __vars__:
+    base_url: "https://api.example.com"
+    version: "v2"
+  
+  endpoint: !jinja "{{ vars.base_url }}/{{ vars.version }}/users"
+  
+  settings:
+    __vars__:
+      timeout: 30
+    
+    # This scope has access to both parent vars (base_url, version) and its own (timeout)
+    connection_timeout: !jinja "{{ vars.timeout }}"
+    read_url: !jinja "{{ vars.base_url }}/{{ vars.version }}/read"
+```
+
+#### Scope Restoration
+
+When exiting a scope, the parent's context is automatically restored:
+
+```yaml
+# Global context
+global_value: !jinja "{{ vars.base_url }}"  # Uses global context
+
+api_config:
+  __vars__:
+    base_url: "https://api.example.com"  # Overrides base_url for this scope
+  
+  endpoint: !jinja "{{ vars.base_url }}"  # Uses scoped value
+
+# Back to global context
+fallback: !jinja "{{ vars.base_url }}"  # Uses global context again
+```
+
+#### Custom Key Name
+
+You can customize the special key name by passing `jinja_vars_key` to the loader:
+
+```python
+config = config_load('config.yml', context={'vars': {'env': 'prod'}}, jinja_vars_key='_context')
+```
+
+```yaml
+api:
+  _context:
+    version: "v3"
+  url: !jinja "{{ vars.version }}"
+```
+
+Note: The `__vars__` key itself is never included in the final loaded configuration.
