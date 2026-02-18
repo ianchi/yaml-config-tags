@@ -1,3 +1,9 @@
+## v0.6.0 (2026-02-17)
+
+### Feat
+
+- add scoped context vars
+
 ## v0.5.0 (2025-09-29)
 
 ### Feat
