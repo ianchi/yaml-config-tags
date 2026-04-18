@@ -1,3 +1,9 @@
+## v0.7.0 (2026-04-18)
+
+### Feat
+
+- add yaml front matter
+
 ## v0.6.0 (2026-02-17)
 
 ### Feat
