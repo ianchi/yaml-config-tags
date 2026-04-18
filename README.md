@@ -8,7 +8,7 @@ Provides a set of custom tags to extend YAML for managing advanced configuration
 It supports:
 
 - Environment variables: `!env`
-- File includes: `!include`
+- File includes: `!include` (YAML, JSON, plain text, YAML front matter)
 - Jinja templating: `!jinja`
 - Scoped context variables: `__vars__`
 
@@ -96,11 +96,12 @@ You can include other files in your configuration file by using the `!include` t
 advanced: !include advanced.yaml
 ```
 
-Three types of files are supported, specified as a tag suffix:
+Four types of files are supported, specified as a tag suffix:
 
 - `yaml` - Load the file as a YAML file.
 - `json` - Load the file as a JSON file.
 - `txt` - Load the file as a plain text file.
+- `fmt` - Load the file as text with a YAML front matter header.
 
 If no suffix is specified, the file will be loaded as a YAML file.
 
@@ -110,6 +111,37 @@ json_data: !include:json data.json
 ```
 
 Relative paths are resolved relative to the directory of the file that contains the include.
+
+#### YAML Front Matter
+
+You can include files that contain [YAML front matter](https://jekyllrb.com/docs/front-matter/) (e.g. Markdown documents with metadata) using the `yfm` suffix.
+
+Front matter is a YAML block delimited by `---` at the start of the file:
+
+```markdown
+---
+title: My Document
+author: Jane Doe
+tags:
+  - config
+  - example
+---
+This is the body of the document.
+```
+
+Three variants are available:
+
+- `!include:yfm` — returns the body text (shorthand for `!include:yfm:body`)
+- `!include:yfm:body` — returns the body text
+- `!include:yfm:head` — returns the parsed front matter as a dict
+
+```yaml
+content: !include:yfm    docs/page.md       # body text
+content: !include:yfm:body docs/page.md     # same
+meta:    !include:yfm:head docs/page.md     # { title: "My Document", author: "Jane Doe", ... }
+```
+
+If no front matter is found, `yfm:body` returns the full file content and `yfm:head` returns an empty dict.
 
 #### Glob Patterns
 

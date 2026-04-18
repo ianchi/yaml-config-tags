@@ -1,0 +1,3 @@
+text: !include:yfm data.md
+explicit_text: !include:yfm:body data.md
+front: !include:yfm:head data.md

@@ -119,3 +119,14 @@ def test_include_json():
     result = config_load("tests/data/include_json.yaml")
 
     assert result["json"]["hello"] == "world"
+
+
+def test_include_yfm() -> None:
+    """Test loading a YAML file with include directive to a YAML front matter file."""
+    result = config_load("tests/data/include_yfm.yaml")
+
+    assert result["text"] == "This is the body content.\n"
+    assert result["explicit_text"] == result["text"]
+    assert result["front"]["title"] == "Hello World"
+    assert result["front"]["author"] == "test"
+    assert result["front"]["tags"] == ["one", "two"]

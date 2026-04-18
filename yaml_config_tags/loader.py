@@ -224,12 +224,38 @@ class ConfigLoader(yaml.SafeLoader):
 
         return self.env_constructor(node, suffix)
 
+    @staticmethod
+    def _parse_yfm(file: Path) -> tuple[dict, str]:
+        """Parse a file with YAML front matter, returning (frontmatter_dict, body_text).
+
+        Front matter is a YAML block delimited by ``---`` lines at the start of the file.
+        If no front matter is found, returns an empty dict and the full file content.
+        """
+        content = file.read_text(encoding="utf-8")
+        if content.startswith("---"):
+            end = content.find("\n---", 3)
+            if end != -1:
+                front_text = content[3:end].strip()
+                body = content[end + 4 :].lstrip("\n")
+                front = yaml.safe_load(front_text) or {}
+                return front, body
+        return {}, content
+
     def include_constructor(self, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
         """Parse `!include` tag, including another YAML file."""
         return self.multi_include_constructor("yaml", node)
 
     def multi_include_constructor(self, suffix: str, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
-        """Parse `!include:<suffix>` tag, including another YAML file based on the suffix."""
+        """Parse `!include:<suffix>` tag, including another YAML file based on the suffix.
+
+        Supported suffixes:
+        - ``yaml`` – parse as YAML (default for plain ``!include``)
+        - ``json`` – parse as JSON
+        - ``txt``  – read as raw text
+        - ``yfm``       – read YAML-front-matter file; returns body text (shorthand for ``yfm:body``)
+        - ``yfm:body``  – same as ``yfm``
+        - ``yfm:head``  – returns the parsed front-matter dict
+        """
         if not isinstance(node, yaml.nodes.ScalarNode):
             raise yaml.constructor.ConstructorError(
                 None,
@@ -238,11 +264,12 @@ class ConfigLoader(yaml.SafeLoader):
                 node.start_mark,
             )
 
-        if suffix not in ["yaml", "json", "txt"]:
+        valid = ["yaml", "json", "txt", "yfm", "yfm:body", "yfm:head"]
+        if suffix not in valid:
             raise yaml.constructor.ConstructorError(
                 None,
                 None,
-                f"expected 'yaml', 'json', 'str' suffix, but found {suffix}",
+                f"expected {valid}, but found {suffix}",
                 node.start_mark,
             )
         path = self.construct_scalar(node)
@@ -306,6 +333,14 @@ class ConfigLoader(yaml.SafeLoader):
                             node.start_mark,
                         ) from exc
                     results.append(data)
+
+            if suffix in ("yfm", "yfm:body"):
+                _, body = self._parse_yfm(file)
+                results.append(body)
+
+            if suffix == "yfm:head":
+                front, _ = self._parse_yfm(file)
+                results.append(front)
 
         return results if is_glob else results[0]
 
