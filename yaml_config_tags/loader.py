@@ -23,7 +23,7 @@ class ConfigLoader(yaml.SafeLoader):
         *,
         context: dict[str, Any] | None = None,
         jinja_settings: dict[str, Any] | None = None,
-        jinja_filters: dict[str, Callable] | None = None,
+        jinja_filters: dict[str, Callable[..., Any]] | None = None,
         parse_only: bool = False,
         jinja_vars_key: str = "__vars__",
     ) -> None:
@@ -358,7 +358,7 @@ def config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
-    jinja_filters: dict[str, Callable] | None = None,
+    jinja_filters: dict[str, Callable[..., Any]] | None = None,
     *,
     constructor: type[T],
     jinja_vars_key: str = "__vars__",
@@ -370,7 +370,7 @@ def config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
-    jinja_filters: dict[str, Callable] | None = None,
+    jinja_filters: dict[str, Callable[..., Any]] | None = None,
     *,
     constructor: None = None,
     jinja_vars_key: str = "__vars__",
@@ -381,7 +381,7 @@ def config_load(
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
-    jinja_filters: dict[str, Callable] | None = None,
+    jinja_filters: dict[str, Callable[..., Any]] | None = None,
     *,
     constructor: type[Any] | None = None,
     jinja_vars_key: str = "__vars__",
@@ -436,7 +436,7 @@ def config_load(
 def config_get_env(
     path: str | Path,
     jinja_settings: dict[str, Any] | None = None,
-    jinja_filters: dict[str, Callable] | None = None,
+    jinja_filters: dict[str, Callable[..., Any]] | None = None,
     jinja_vars_key: str = "__vars__",
 ) -> set[str]:
     """Load configuration YAML file, parses it and return list of referenced ENV variables."""
