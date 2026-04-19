@@ -404,12 +404,12 @@ def config_load(
         including regular classes, dataclasses, NamedTuples, Pydantic models, etc.
         The loaded YAML data must be a dictionary to be passed as keyword arguments.
     """
-    path = Path(path)
+    path = Path(path).absolute()
 
     with open(path, encoding="utf-8") as stream:
         loader = ConfigLoader(
             stream,
-            path.parent.absolute(),
+            path.parent,
             context=context,
             jinja_settings=jinja_settings,
             jinja_filters=jinja_filters,
@@ -417,16 +417,21 @@ def config_load(
         )
         try:
             data = loader.get_single_data()
+        except yaml.YAMLError as exc:
+            raise exc from None
 
-            if constructor:
-                if not isinstance(data, dict):
-                    raise ValueError("Data is not a dictionary, cannot construct object")
-                return constructor(**data)
-
-            return data
         finally:
             loader.dispose()
 
+        if constructor:
+            if not isinstance(data, dict):
+                raise ValueError(f"Failed to construct object from {path}: data is not a dictionary")
+            try:
+                return constructor(**data)
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError(f"Failed to construct object from {path}: {exc}") from None
+
+        return data
 
 def config_get_env(
     path: str | Path,
