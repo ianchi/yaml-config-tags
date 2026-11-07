@@ -5,6 +5,9 @@
   "python.analysis.autoImportCompletions": true,
   "editor.formatOnSave": true,
   "editor.formatOnSaveMode": "file",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
 
   "yaml.customTags": [
     "!env scalar",

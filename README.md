@@ -17,7 +17,6 @@ It supports:
 ```bash
 pip install yaml-config-tags
 ```
-
 ## Usage
 
 Simply load the configuration file using `config_load` and pass a context dictionary to the loader.
@@ -39,10 +38,8 @@ config_load(
 ```python
 from yaml_config import config_load
 
-context = {
-    'name': 'John Doe'
-}
-config = config_load('config.yml', context)
+context = {"name": "John Doe"}
+config = config_load("config.yml", context)
 ```
 
 ```yaml
@@ -237,7 +234,7 @@ fallback: !jinja "{{ vars.base_url }}"  # Uses global context again
 You can customize the special key name by passing `jinja_vars_key` to the loader:
 
 ```python
-config = config_load('config.yml', context={'vars': {'env': 'prod'}}, jinja_vars_key='_context')
+config = config_load("config.yml", context={"vars": {"env": "prod"}}, jinja_vars_key="_context")
 ```
 
 ```yaml
@@ -248,3 +245,21 @@ api:
 ```
 
 Note: The `__vars__` key itself is never included in the final loaded configuration.
+
+
+## Development
+
+Install [uv](https://docs.astral.sh/uv/), then run:
+
+```bash
+uv sync
+uv run pre-commit install --install-hooks
+uv run poe lint
+uv run poe test
+```
+
+The hooks check and audit the lockfile, and sync the environment after Git checkouts, merges, and rewrites. Rerun the install command above when hook types change.
+
+Run `uv run poe bump` from a clean worktree to bump the version, update the changelog, and create a release commit and tag. Commitizen includes tracked changes in the release commit.
+
+Run `uv run poe release` to build and publish the current version to PyPI. The task clears `dist/pypi` before building. Authenticate with a PyPI token in `UV_PUBLISH_TOKEN` or use trusted publishing in CI.

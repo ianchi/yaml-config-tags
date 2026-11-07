@@ -1,6 +1,6 @@
 """This module contains tests for the yaml-config library."""
 
-import datetime
+import datetime as dt
 import os
 
 import yaml
@@ -42,7 +42,6 @@ def test_jinja_filter() -> None:
 def test_obj_error() -> None:
     """Test loading a YAML file with malformed Jinja object."""
     with raises(yaml.constructor.ConstructorError):
-
         config_load("tests/data/obj_err.yaml")
 
 
@@ -78,8 +77,8 @@ def test_env_suffix() -> None:
     assert isinstance(result["float"], float)
     assert result["str"] == "2024-12-01"
     assert isinstance(result["str"], str)
-    assert result["timestamp"] == datetime.date(2024, 12, 1)
-    assert isinstance(result["timestamp"], datetime.date)
+    assert result["timestamp"] == dt.date(2024, 12, 1)
+    assert isinstance(result["timestamp"], dt.date)
 
 
 def test_env_suffix_err() -> None:
@@ -95,7 +94,6 @@ def test_env_suffix_err() -> None:
 def test_env_missing() -> None:
     """Test loading a YAML file with missing environment variables."""
     with raises(yaml.constructor.ConstructorError):
-
         config_load("tests/data/env_err.yaml")
 
 

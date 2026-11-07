@@ -1,5 +1,6 @@
 """Tests for scoped context management using __vars__ key."""
 
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -52,8 +53,6 @@ def test_disable_context_scope():
 
 def test_context_scope_error_non_dict():
     """Test that __vars__ with non-dict value raises error."""
-    import tempfile
-
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write("""
 test_obj:
@@ -73,8 +72,6 @@ test_obj:
 
 def test_custom_vars_key():
     """Test using a custom key name instead of __vars__."""
-    import tempfile
-
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write("""
 api:

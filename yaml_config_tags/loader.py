@@ -27,7 +27,6 @@ class ConfigLoader(yaml.SafeLoader):
         parse_only: bool = False,
         jinja_vars_key: str = "__vars__",
     ) -> None:
-
         super().__init__(stream)
         # Store configurations
         self.base_path = Path(base_path)
@@ -43,7 +42,7 @@ class ConfigLoader(yaml.SafeLoader):
         self.parse_only = parse_only
         self.jinja_vars_key = jinja_vars_key
 
-    def construct_mapping(self, node: yaml.nodes.Node, deep: bool = False) -> dict:
+    def construct_mapping(self, node: yaml.nodes.Node, deep: bool = False) -> dict:  # noqa: FBT001, FBT002
         """Override to intercept mappings with jinja_vars_key for context management."""
         if not isinstance(node, yaml.nodes.MappingNode):
             raise yaml.constructor.ConstructorError(
@@ -151,9 +150,7 @@ class ConfigLoader(yaml.SafeLoader):
 
     # adapted from
     # https://github.com/waylan/pyyaml-env-tag/blob/master/yaml_env_tag.py
-    def env_constructor(
-        self, node: yaml.nodes.Node, suffix: str | None = None
-    ) -> Any:  # noqa: ANN401
+    def env_constructor(self, node: yaml.nodes.Node, suffix: str | None = None) -> Any:  # noqa: ANN401
         """Parse `!env` tag, fetching values from environment variables.
 
         Supports fallback variables and default values using list syntax:
@@ -249,12 +246,12 @@ class ConfigLoader(yaml.SafeLoader):
         """Parse `!include:<suffix>` tag, including another YAML file based on the suffix.
 
         Supported suffixes:
-        - ``yaml`` – parse as YAML (default for plain ``!include``)
-        - ``json`` – parse as JSON
-        - ``txt``  – read as raw text
-        - ``yfm``       – read YAML-front-matter file; returns body text (shorthand for ``yfm:body``)
-        - ``yfm:body``  – same as ``yfm``
-        - ``yfm:head``  – returns the parsed front-matter dict
+        - ``yaml`` - parse as YAML (default for plain ``!include``)
+        - ``json`` - parse as JSON
+        - ``txt`` - read as raw text
+        - ``yfm`` - read front matter and return the body (shorthand for ``yfm:body``)
+        - ``yfm:body`` - same as ``yfm``
+        - ``yfm:head`` - return the parsed front-matter dict
         """
         if not isinstance(node, yaml.nodes.ScalarNode):
             raise yaml.constructor.ConstructorError(
@@ -334,13 +331,9 @@ class ConfigLoader(yaml.SafeLoader):
                         ) from exc
                     results.append(data)
 
-            if suffix in ("yfm", "yfm:body"):
-                _, body = self._parse_yfm(file)
-                results.append(body)
-
-            if suffix == "yfm:head":
-                front, _ = self._parse_yfm(file)
-                results.append(front)
+            if suffix in ("yfm", "yfm:body", "yfm:head"):
+                front, body = self._parse_yfm(file)
+                results.append(front if suffix == "yfm:head" else body)
 
         return results if is_glob else results[0]
 
@@ -377,7 +370,7 @@ def config_load(
 ) -> Any: ...  # noqa: ANN401
 
 
-def config_load(
+def config_load(  # noqa: PLR0913
     path: str | Path,
     context: dict[str, Any] | None = None,
     jinja_settings: dict[str, Any] | None = None,
@@ -425,13 +418,16 @@ def config_load(
 
         if constructor:
             if not isinstance(data, dict):
-                raise ValueError(f"Failed to construct object from {path}: data is not a dictionary")
+                raise ValueError(
+                    f"Failed to construct object from {path}: data is not a dictionary"
+                )
             try:
                 return constructor(**data)
             except Exception as exc:  # noqa: BLE001
                 raise ValueError(f"Failed to construct object from {path}: {exc}") from None
 
         return data
+
 
 def config_get_env(
     path: str | Path,
