@@ -1,6 +1,29 @@
 """This module contains tests for the yaml-config library."""
 
-from yaml_config_tags import config_get_env
+from pathlib import Path
+from typing import Never
+
+from yaml_config_tags import TagDefinition, config_get_env
+
+
+def test_get_env_custom_tags(tmp_path: Path) -> None:
+    """ENV scanning decodes custom collections without executing constructors."""
+    path = tmp_path / "custom.yaml"
+    path.write_text(
+        "!mapping\nitems: !sequence [!env CUSTOM_ONE, !env [CUSTOM_TWO, 0]]\nplain: !scalar 42\n",
+        encoding="utf-8",
+    )
+
+    def forbidden(value: object) -> Never:
+        raise AssertionError(f"constructor executed with {value!r}")
+
+    tags = [
+        TagDefinition("!mapping", forbidden, kind="mapping"),
+        TagDefinition("!sequence", forbidden, kind="sequence"),
+        TagDefinition("!scalar", forbidden),
+    ]
+
+    assert config_get_env(path, tags=tags) == {"CUSTOM_ONE", "CUSTOM_TWO"}
 
 
 def test_get_env() -> None:

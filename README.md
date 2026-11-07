@@ -11,6 +11,7 @@ It supports:
 - File includes: `!include` (YAML, JSON, plain text, YAML front matter)
 - Jinja templating: `!jinja`
 - Scoped context variables: `__vars__`
+- User-defined tags: `TagDefinition`
 
 ## Installation
 
@@ -30,6 +31,7 @@ config_load(
     *,
     constructor: type[Any] | None = None,
     jinja_vars_key: str = "__vars__",
+    tags: Sequence[TagDefinition] | None = None,
 ) -> Any
 ```
 
@@ -55,6 +57,72 @@ greeting: !jinja |
 ```
 
 ## Features
+
+### Custom Tags
+
+Pass a list or tuple of `TagDefinition` objects when loading a document:
+
+```python
+from pathlib import Path
+
+from yaml_config_tags import TagDefinition, config_load
+
+config = config_load(
+    "config.yml",
+    tags=[
+        TagDefinition(tag="!path", constructor=Path),
+        TagDefinition(tag="!double", constructor=lambda value: value * 2),
+        TagDefinition(tag="!tuple", constructor=tuple, kind="sequence"),
+        TagDefinition(tag="!record", constructor=dict, kind="mapping"),
+    ],
+)
+```
+
+```yaml
+directory: !path ./data
+workers: !double 4
+coordinates: !tuple [10, 20]
+record: !record
+  name: example
+  values: !tuple [1, 2]
+```
+
+`TagDefinition(tag, constructor, kind="scalar")` defaults to scalar nodes.
+Set `kind="sequence"` or `kind="mapping"` to accept lists or dictionaries.
+The kind validates the YAML node shape, not the Python input or output type.
+The constructor is called with **one positional argument**: the decoded value.
+Collection children, including nested custom tags, are decoded before the constructor runs.
+Lists and dictionaries are not unpacked into positional or keyword arguments.
+Functions, classes, callable objects, and `functools.partial` are supported if they
+accept that call; the constructor handles domain-specific validation.
+
+**YAML type inference occurs before scalar construction.** For example, `!double 4`
+passes the integer `4`, while `!double "4"` passes the string `"4"`.
+PyYAML's implicit rules also infer floats, booleans, nulls, and dates; for example,
+unquoted `yes` becomes `True`. Quote values that must remain strings.
+Block scalar values remain strings. A scalar kind does not imply a string value.
+
+Use literal local names such as `!mytag`. Duplicate definitions, invalid kinds,
+and non-callable constructors are rejected. Built-in tags such as `!env`, `!jinja`,
+and `!include`, including their suffix forms, cannot be overridden.
+Shape mismatches and constructor failures report the tag and YAML source location;
+constructor failures retain the original exception as their cause.
+
+Definitions apply only to the current load and its YAML includes, including nested
+and glob includes. They do not modify global PyYAML registrations or affect JSON,
+plain text, or YAML front matter includes. The existing `constructor=` argument
+still constructs the whole loaded document separately.
+
+Ordinary aliases reuse the same converted result, so a constructor runs once per
+tagged node. Loads with custom definitions use eager construction to supply complete
+values; recursive YAML graphs are not supported in these loads. Loads without custom
+definitions retain their existing behavior.
+
+`config_get_env(path, tags=definitions)` recognizes custom tags and scans their
+children without executing their constructors. It retains the existing scanning
+behavior and does not traverse includes.
+
+Custom constructors are trusted Python code. Using `SafeLoader` does not sandbox them.
 
 ### Environment Variables
 

@@ -2,15 +2,39 @@
 
 import json
 import os
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Generator, Sequence
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Any, BinaryIO, TextIO, TypeVar, overload
+from typing import Any, BinaryIO, Literal, TextIO, TypeVar, overload
 
 import yaml
 from jinja2 import Environment
 from jinja2.nativetypes import NativeEnvironment
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class TagDefinition:
+    """Define a local YAML tag whose constructor receives one decoded value.
+
+    Scalars use YAML implicit type inference. ``kind`` validates the YAML node
+    shape, not the inferred Python type or the constructor's return type.
+    """
+
+    tag: str
+    constructor: Callable[[Any], Any]
+    kind: Literal["scalar", "sequence", "mapping"] = "scalar"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.tag, str) or not re.fullmatch(r"![^\s!\[\]{},]+", self.tag):
+            raise ValueError("tag must be a !-prefixed local YAML tag, such as !mytag")
+        if self.kind not in ("scalar", "sequence", "mapping"):
+            raise ValueError("kind must be scalar, sequence, or mapping")
+        if not callable(self.constructor):
+            raise TypeError("constructor must be callable with one positional value")
 
 
 class ConfigLoader(yaml.SafeLoader):
@@ -26,7 +50,22 @@ class ConfigLoader(yaml.SafeLoader):
         jinja_filters: dict[str, Callable[..., Any]] | None = None,
         parse_only: bool = False,
         jinja_vars_key: str = "__vars__",
+        tags: Sequence[TagDefinition] | None = None,
     ) -> None:
+        self.tags = tuple(tags or ())
+        self.yaml_constructors = self.yaml_constructors.copy()
+        for definition in self.tags:
+            if not isinstance(definition, TagDefinition):
+                raise TypeError("tags must contain TagDefinition instances")
+            if definition.tag in self.yaml_constructors or any(
+                definition.tag.startswith(prefix)
+                for prefix in self.yaml_multi_constructors
+                if prefix is not None
+            ):
+                raise ValueError(f"duplicate or reserved tag: {definition.tag}")
+            self.yaml_constructors[definition.tag] = partial(
+                ConfigLoader.construct_custom_tag, definition=definition
+            )
         super().__init__(stream)
         # Store configurations
         self.base_path = Path(base_path)
@@ -41,6 +80,65 @@ class ConfigLoader(yaml.SafeLoader):
         self.env_vars: set[str] = set()
         self.parse_only = parse_only
         self.jinja_vars_key = jinja_vars_key
+
+    def construct_document(self, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
+        """Fully construct anchors before passing their values to custom tags."""
+        saved_deep = self.deep_construct
+        if self.tags:
+            self.deep_construct = True
+        try:
+            return super().construct_document(node)
+        finally:
+            self.deep_construct = saved_deep
+
+    def construct_custom_tag(
+        self,
+        node: yaml.nodes.ScalarNode | yaml.nodes.SequenceNode | yaml.nodes.MappingNode,
+        *,
+        definition: TagDefinition,
+    ) -> Generator[Any, None, None]:
+        """Validate the node shape, decode its payload, and run its constructor."""
+        node_types = {
+            "scalar": yaml.nodes.ScalarNode,
+            "sequence": yaml.nodes.SequenceNode,
+            "mapping": yaml.nodes.MappingNode,
+        }
+        if not isinstance(node, node_types[definition.kind]):
+            actual = type(node).__name__.removesuffix("Node").lower()
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"{definition.tag} expects a {definition.kind} node, found {actual}",
+                node.start_mark,
+            )
+
+        if isinstance(node, yaml.nodes.ScalarNode):
+            tag = self.resolve(yaml.nodes.ScalarNode, node.value, (node.style is None, False))
+            if tag in ("tag:yaml.org,2002:merge", "tag:yaml.org,2002:value"):
+                tag = "tag:yaml.org,2002:str"
+            scalar = yaml.nodes.ScalarNode(
+                tag, node.value, node.start_mark, node.end_mark, style=node.style
+            )
+            value = self.construct_object(scalar, deep=True)
+        elif isinstance(node, yaml.nodes.SequenceNode):
+            value = self.construct_sequence(node, deep=True)
+        else:
+            self.flatten_mapping(node)
+            value = self.construct_mapping(node, deep=True)
+
+        if self.parse_only:
+            yield value
+            return
+        try:
+            result = definition.constructor(value)
+        except Exception as exc:
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"failed to construct {definition.tag}: {exc}",
+                node.start_mark,
+            ) from exc
+        yield result
 
     def construct_mapping(self, node: yaml.nodes.Node, deep: bool = False) -> dict:  # noqa: FBT001, FBT002
         """Override to intercept mappings with jinja_vars_key for context management."""
@@ -302,7 +400,10 @@ class ConfigLoader(yaml.SafeLoader):
             if suffix == "yaml":
                 results.append(
                     config_load(
-                        file, context=self.jinja_context, jinja_settings=self.jinja_settings
+                        file,
+                        context=self.jinja_context,
+                        jinja_settings=self.jinja_settings,
+                        tags=self.tags,
                     )
                 )
 
@@ -355,6 +456,7 @@ def config_load(
     *,
     constructor: type[T],
     jinja_vars_key: str = "__vars__",
+    tags: Sequence[TagDefinition] | None = None,
 ) -> T: ...
 
 
@@ -367,6 +469,7 @@ def config_load(
     *,
     constructor: None = None,
     jinja_vars_key: str = "__vars__",
+    tags: Sequence[TagDefinition] | None = None,
 ) -> Any: ...  # noqa: ANN401
 
 
@@ -378,6 +481,7 @@ def config_load(  # noqa: PLR0913
     *,
     constructor: type[Any] | None = None,
     jinja_vars_key: str = "__vars__",
+    tags: Sequence[TagDefinition] | None = None,
 ) -> Any:
     """Load configuration from YAML file, with support for Jinja, ENV and Includes.
 
@@ -388,6 +492,7 @@ def config_load(  # noqa: PLR0913
         jinja_filters: Custom Jinja filters
         constructor: Optional class constructor to create typed instances
         jinja_vars_key: Key name for context management in mappings (default: "__vars__")
+        tags: Custom tag definitions, also used by YAML includes
 
     Returns:
         `Any` if no constructor is provided, otherwise an instance of the constructor type.
@@ -407,10 +512,13 @@ def config_load(  # noqa: PLR0913
             jinja_settings=jinja_settings,
             jinja_filters=jinja_filters,
             jinja_vars_key=jinja_vars_key,
+            tags=tags,
         )
         try:
             data = loader.get_single_data()
         except yaml.YAMLError as exc:
+            if exc.__cause__ is not None:
+                raise
             raise exc from None
 
         finally:
@@ -434,6 +542,8 @@ def config_get_env(
     jinja_settings: dict[str, Any] | None = None,
     jinja_filters: dict[str, Callable[..., Any]] | None = None,
     jinja_vars_key: str = "__vars__",
+    *,
+    tags: Sequence[TagDefinition] | None = None,
 ) -> set[str]:
     """Load configuration YAML file, parses it and return list of referenced ENV variables."""
     path = Path(path)
@@ -447,6 +557,7 @@ def config_get_env(
             jinja_filters=jinja_filters,
             parse_only=True,
             jinja_vars_key=jinja_vars_key,
+            tags=tags,
         )
         try:
             loader.get_single_data()

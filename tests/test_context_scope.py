@@ -4,8 +4,38 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import yaml
 
-from yaml_config_tags import config_load
+from yaml_config_tags import TagDefinition, config_load
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_custom_tag_context_scope(tmp_path: Path, *, fail: bool) -> None:
+    """Custom mappings decode scoped children and restore context even on failure."""
+    path = tmp_path / "custom.yaml"
+    path.write_text(
+        "scoped: !custom\n"
+        "  __vars__: {name: scoped}\n"
+        '  value: !jinja "{{ vars.name }}"\n'
+        'after: !jinja "{{ vars.name }}"\n',
+        encoding="utf-8",
+    )
+    context = {"vars": {"name": "parent"}}
+
+    def convert(value: dict) -> dict:
+        assert value == {"value": "scoped"}
+        if fail:
+            raise ValueError("conversion failed")
+        return value
+
+    tags = [TagDefinition("!custom", convert, kind="mapping")]
+    if fail:
+        with pytest.raises(yaml.constructor.ConstructorError, match="conversion failed"):
+            config_load(path, context=context, tags=tags)
+    else:
+        result = config_load(path, context=context, tags=tags)
+        assert result == {"scoped": {"value": "scoped"}, "after": "parent"}
+    assert context == {"vars": {"name": "parent"}}
 
 
 def test_context_scope_basic():
