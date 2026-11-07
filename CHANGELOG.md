@@ -1,3 +1,9 @@
+## v0.8.0 (2026-11-07)
+
+### Feat
+
+- add per-load custom YAML tags with TagDefinition
+
 ## v0.7.3 (2026-04-19)
 
 ### Fix
