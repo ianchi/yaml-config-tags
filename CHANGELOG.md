@@ -1,3 +1,9 @@
+## v0.9.0 (2026-11-07)
+
+### Feat
+
+- add custom tag reference extraction with optional include following
+
 ## v0.8.0 (2026-11-07)
 
 ### Feat
