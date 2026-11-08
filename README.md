@@ -87,7 +87,7 @@ record: !record
   values: !tuple [1, 2]
 ```
 
-`TagDefinition(tag, constructor, kind="scalar")` defaults to scalar nodes.
+`TagDefinition(tag, constructor, kind="scalar", extract=None)` defaults to scalar nodes.
 Set `kind="sequence"` or `kind="mapping"` to accept lists or dictionaries.
 The kind validates the YAML node shape, not the Python input or output type.
 The constructor is called with **one positional argument**: the decoded value.
@@ -119,8 +119,49 @@ values; recursive YAML graphs are not supported in these loads. Loads without cu
 definitions retain their existing behavior.
 
 `config_get_env(path, tags=definitions)` recognizes custom tags and scans their
-children without executing their constructors. It retains the existing scanning
-behavior and does not traverse includes.
+children without executing their constructors. By default it does not traverse
+includes. Pass `follow_includes=True` to also scan YAML files referenced by `!include`.
+The main file and each included file are scanned once.
+
+#### Extracting custom tag references
+
+The `!env` scan has a counterpart for custom tags. `config_get_tag_refs` scans the
+file without running constructors and returns the references found for each tag:
+
+```python
+from yaml_config_tags import TagDefinition, config_get_tag_refs
+
+tags = [
+    TagDefinition("!secret", fetch_secret),
+    TagDefinition("!secrets", fetch_all, kind="sequence"),
+    TagDefinition("!package", install, kind="mapping", extract=lambda v: [v["name"]]),
+]
+config_get_tag_refs("config.yml", tags=tags, select=["!secret", "!secrets"])
+# {"!secret": {"db/password"}, "!secrets": {"api/key", "api/token"}}
+```
+
+By default a reference is the raw text written in the YAML, without type
+inference (`!secret yes` reports `"yes"`):
+
+- scalar tags report their text;
+- sequence tags report the text of their untagged scalar items; nested tags and
+  collections are skipped;
+- mapping tags report nothing.
+
+To customize this, pass `extract`. It is a callable that receives the same
+decoded value as the constructor and returns an iterable of strings. In scan mode,
+built-in tags are not resolved, so `extract` sees their raw form (for example,
+`!jinja` template text).
+
+- `select` limits the result to the given tags. By default all defined tags are
+  included, each with an empty set if unused. Undefined tags raise `ValueError`.
+- `follow_includes=True` also scans YAML files referenced by `!include`, including
+  globs. Each file is scanned once. JSON, text, and front matter includes are not
+  scanned.
+
+Extract failures report the tag and YAML source location. This includes returning
+a bare string instead of an iterable.
+`extract` only runs during scans, never during `config_load`.
 
 Custom constructors are trusted Python code. Using `SafeLoader` does not sandbox them.
 

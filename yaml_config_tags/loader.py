@@ -3,7 +3,7 @@
 import json
 import os
 import re
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Collection, Generator, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -27,6 +27,7 @@ class TagDefinition:
     tag: str
     constructor: Callable[[Any], Any]
     kind: Literal["scalar", "sequence", "mapping"] = "scalar"
+    extract: Callable[[Any], Iterable[str]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.tag, str) or not re.fullmatch(r"![^\s!\[\]{},]+", self.tag):
@@ -35,6 +36,8 @@ class TagDefinition:
             raise ValueError("kind must be scalar, sequence, or mapping")
         if not callable(self.constructor):
             raise TypeError("constructor must be callable with one positional value")
+        if self.extract is not None and not callable(self.extract):
+            raise TypeError("extract must be callable with one positional value")
 
 
 class ConfigLoader(yaml.SafeLoader):
@@ -51,6 +54,8 @@ class ConfigLoader(yaml.SafeLoader):
         parse_only: bool = False,
         jinja_vars_key: str = "__vars__",
         tags: Sequence[TagDefinition] | None = None,
+        extract_tags: Collection[str] | None = None,
+        follow_includes: bool = False,
     ) -> None:
         self.tags = tuple(tags or ())
         self.yaml_constructors = self.yaml_constructors.copy()
@@ -71,6 +76,7 @@ class ConfigLoader(yaml.SafeLoader):
         self.base_path = Path(base_path)
         self.jinja_context = context or {}
         self.jinja_settings = jinja_settings or {}
+        self.jinja_filters = jinja_filters
         self.text_env = Environment(autoescape=True, **(self.jinja_settings))
         self.native_env = NativeEnvironment(**(self.jinja_settings))
         if jinja_filters:
@@ -78,6 +84,13 @@ class ConfigLoader(yaml.SafeLoader):
                 self.text_env.filters[name] = func
                 self.native_env.filters[name] = func
         self.env_vars: set[str] = set()
+        self.tag_refs: dict[str, set[str]] = {
+            definition.tag: set()
+            for definition in self.tags
+            if extract_tags is None or definition.tag in extract_tags
+        }
+        self.follow_includes = follow_includes
+        self.scanned_files: set[Path] = set()
         self.parse_only = parse_only
         self.jinja_vars_key = jinja_vars_key
 
@@ -127,6 +140,19 @@ class ConfigLoader(yaml.SafeLoader):
             value = self.construct_mapping(node, deep=True)
 
         if self.parse_only:
+            if definition.tag in self.tag_refs:
+                try:
+                    refs = definition.extract(value) if definition.extract else self._raw_refs(node)
+                    if isinstance(refs, str):
+                        raise TypeError("must return an iterable of strings, not a string")
+                    self.tag_refs[definition.tag].update(refs)
+                except Exception as exc:
+                    raise yaml.constructor.ConstructorError(
+                        None,
+                        None,
+                        f"failed to extract {definition.tag}: {exc}",
+                        node.start_mark,
+                    ) from exc
             yield value
             return
         try:
@@ -139,6 +165,51 @@ class ConfigLoader(yaml.SafeLoader):
                 node.start_mark,
             ) from exc
         yield result
+
+    @staticmethod
+    def _raw_refs(node: yaml.nodes.Node) -> list[str]:
+        """Return the raw scalar text of a node, or of its untagged scalar items."""
+        if isinstance(node, yaml.nodes.ScalarNode):
+            return [node.value]
+        if isinstance(node, yaml.nodes.SequenceNode):
+            return [
+                child.value
+                for child in node.value
+                if isinstance(child, yaml.nodes.ScalarNode)
+                and child.tag.startswith("tag:yaml.org,2002:")
+            ]
+        return []
+
+    def _load_include(self, file: Path) -> Any:  # noqa: ANN401
+        """Load an included YAML file with this loader's settings, merging scan results."""
+        if self.parse_only:
+            key = file.resolve()
+            if key in self.scanned_files:
+                return None
+            self.scanned_files.add(key)
+        file = file.absolute()
+        with open(file, encoding="utf-8") as stream:
+            loader = ConfigLoader(
+                stream,
+                file.parent,
+                context=self.jinja_context,
+                jinja_settings=self.jinja_settings,
+                jinja_filters=self.jinja_filters,
+                parse_only=self.parse_only,
+                jinja_vars_key=self.jinja_vars_key,
+                tags=self.tags,
+                extract_tags=self.tag_refs.keys(),
+                follow_includes=self.follow_includes,
+            )
+            loader.scanned_files = self.scanned_files
+            try:
+                data = loader.get_single_data()
+            finally:
+                loader.dispose()
+        self.env_vars.update(loader.env_vars)
+        for tag, refs in loader.tag_refs.items():
+            self.tag_refs[tag].update(refs)
+        return data
 
     def construct_mapping(self, node: yaml.nodes.Node, deep: bool = False) -> dict:  # noqa: FBT001, FBT002
         """Override to intercept mappings with jinja_vars_key for context management."""
@@ -340,7 +411,7 @@ class ConfigLoader(yaml.SafeLoader):
         """Parse `!include` tag, including another YAML file."""
         return self.multi_include_constructor("yaml", node)
 
-    def multi_include_constructor(self, suffix: str, node: yaml.nodes.Node) -> Any:  # noqa: ANN401
+    def multi_include_constructor(self, suffix: str, node: yaml.nodes.Node) -> Any:  # noqa: ANN401, PLR0912
         """Parse `!include:<suffix>` tag, including another YAML file based on the suffix.
 
         Supported suffixes:
@@ -377,7 +448,7 @@ class ConfigLoader(yaml.SafeLoader):
                 node.start_mark,
             )
 
-        if self.parse_only:
+        if self.parse_only and not (self.follow_includes and suffix == "yaml"):
             return f"{path}"
 
         # check if it is a glob pattern
@@ -398,14 +469,7 @@ class ConfigLoader(yaml.SafeLoader):
                 )
 
             if suffix == "yaml":
-                results.append(
-                    config_load(
-                        file,
-                        context=self.jinja_context,
-                        jinja_settings=self.jinja_settings,
-                        tags=self.tags,
-                    )
-                )
+                results.append(self._load_include(file))
 
             if suffix == "json":
                 with open(file, encoding="utf-8") as fp:
@@ -436,6 +500,8 @@ class ConfigLoader(yaml.SafeLoader):
                 front, body = self._parse_yfm(file)
                 results.append(front if suffix == "yfm:head" else body)
 
+        if self.parse_only:
+            return f"{path}"
         return results if is_glob else results[0]
 
 
@@ -537,15 +603,77 @@ def config_load(  # noqa: PLR0913
         return data
 
 
-def config_get_env(
+def config_get_env(  # noqa: PLR0913
     path: str | Path,
     jinja_settings: dict[str, Any] | None = None,
     jinja_filters: dict[str, Callable[..., Any]] | None = None,
     jinja_vars_key: str = "__vars__",
     *,
     tags: Sequence[TagDefinition] | None = None,
+    follow_includes: bool = False,
 ) -> set[str]:
-    """Load configuration YAML file, parses it and return list of referenced ENV variables."""
+    """Load configuration YAML file, parses it and return list of referenced ENV variables.
+
+    Set ``follow_includes`` to also scan YAML files referenced by ``!include``.
+    """
+    return _scan(
+        path,
+        jinja_settings,
+        jinja_filters,
+        jinja_vars_key,
+        tags,
+        extract_tags=(),
+        follow_includes=follow_includes,
+    ).env_vars
+
+
+def config_get_tag_refs(  # noqa: PLR0913
+    path: str | Path,
+    jinja_settings: dict[str, Any] | None = None,
+    jinja_filters: dict[str, Callable[..., Any]] | None = None,
+    jinja_vars_key: str = "__vars__",
+    *,
+    tags: Sequence[TagDefinition],
+    select: Collection[str] | None = None,
+    follow_includes: bool = False,
+) -> dict[str, set[str]]:
+    """Scan a YAML file and return the references of each custom tag, without constructing.
+
+    Args:
+        path: Path to the YAML configuration file
+        jinja_settings: Settings for Jinja environment
+        jinja_filters: Custom Jinja filters
+        jinja_vars_key: Key name for context management in mappings
+        tags: Custom tag definitions
+        select: Custom tags to collect; all tags in ``tags`` if omitted
+        follow_includes: Also scan YAML files referenced by ``!include``
+    """
+    if select is not None:
+        unknown = set(select) - {definition.tag for definition in tags}
+        if unknown:
+            raise ValueError(f"select contains undefined tags: {sorted(unknown)}")
+    return _scan(
+        path,
+        jinja_settings,
+        jinja_filters,
+        jinja_vars_key,
+        tags,
+        extract_tags=select,
+        follow_includes=follow_includes,
+    ).tag_refs
+
+
+def _scan(  # noqa: PLR0913
+    path: str | Path,
+    jinja_settings: dict[str, Any] | None,
+    jinja_filters: dict[str, Callable[..., Any]] | None,
+    jinja_vars_key: str,
+    tags: Sequence[TagDefinition] | None,
+    *,
+    extract_tags: Collection[str] | None = None,
+    follow_includes: bool = False,
+) -> ConfigLoader:
+    """Parse a YAML file in parse-only mode and return the loader with collected data."""
     path = Path(path)
 
     with open(path, encoding="utf-8") as stream:
@@ -558,10 +686,13 @@ def config_get_env(
             parse_only=True,
             jinja_vars_key=jinja_vars_key,
             tags=tags,
+            extract_tags=extract_tags,
+            follow_includes=follow_includes,
         )
+        loader.scanned_files.add(path.resolve())
         try:
             loader.get_single_data()
         finally:
             loader.dispose()
 
-        return loader.env_vars
+        return loader
